@@ -1,252 +1,321 @@
+// server.js
+require('dotenv').config();
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const config = require('./config');
+const { getProvider } = require('./services/llm-providers');
+const { executeTool } = require('./services/tool-executor');
+const { getMemoryContext, addLesson } = require('./services/memory');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// تأكد من وجود مجلد workspace
+if (!fs.existsSync(config.WORKSPACE_DIR)) {
+  fs.mkdirSync(config.WORKSPACE_DIR, { recursive: true });
+}
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-const WORKSPACE_DIR = path.join(__dirname, 'workspace');
-const UPLOADS_DIR = path.join(__dirname, 'uploads');
+// ============================================================
+// 🧠 حلقة الوكيل الأساسية (Agent Loop)
+// ============================================================
+async function runAgent(userMessage, chatHistory = []) {
+  // 1. بناء رسالة النظام مع الأدوات والذاكرة
+  const memoryContext = getMemoryContext();
+  const systemPrompt = `
+أنت وكيل برمجي خارق يعمل داخل نظام OpenClaw.
+- مساحة العمل هي: ${config.WORKSPACE_DIR}
+- يمكنك استخدام الأدوات التالية: قراءة/كتابة/حذف ملفات، عرض الملفات، تشغيل أوامر مسموحة (npm run, git status/diff, commit, ls, cat).
+- التعليمات الأمنية: لا تخرج عن مساحة العمل، ولا تشغل أوامر غير مسموحة.
+- استخدم الأدوات فقط عند الحاجة.
+- الذاكرة التشغيلية (الدروس المستفادة):
+${memoryContext}
 
-if (!fs.existsSync(WORKSPACE_DIR)) fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
-if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+أجب باللغة العربية دائماً، وكن دقيقاً ومفيداً.
+`;
 
-// المفتاح المدمج مباشرة للاتصال الحقيقي بنموذج الذكاء الاصطناعي
-const GEMINI_API_KEY = "AQ.Ab8RN6LY3jp6eipV5mLxfq2dqK3Yfiq81fM-Gox0bMEYzZ7Z8g";
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...chatHistory,
+    { role: 'user', content: userMessage }
+  ];
 
-app.get('/', (req, res) => {
-    res.send(`
-        <!DOCTYPE html>
-        <html lang="ar" dir="rtl">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-            <title>OpenClaw Live API Connected Core</title>
-            <script src="https://cdn.tailwindcss.com"></script>
-            <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&display=swap" rel="stylesheet">
-            <style>
-                body { background-color: #171717; color: #ececf1; font-family: 'Cairo', sans-serif; }
-                ::-webkit-scrollbar { width: 5px; height: 5px; }
-                ::-webkit-scrollbar-track { background: #212121; }
-                ::-webkit-scrollbar-thumb { background: #424242; border-radius: 4px; }
-                .chat-bubble { word-break: break-word; line-height: 1.6; }
-            </style>
-        </head>
-        <body class="min-h-screen flex flex-col select-none overflow-hidden">
+  let provider = getProvider(config.ACTIVE_PROVIDER);
+  let maxIterations = 5;
+  let finalResponse = '';
 
-            <header class="bg-[#212121] border-b border-neutral-800 px-4 py-3 flex justify-between items-center shadow-md z-50">
-                <div class="flex items-center gap-3">
-                    <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white font-bold text-xs shadow-lg">OC</div>
-                    <div>
-                        <h1 class="text-xs font-bold text-white tracking-wide">OpenClaw <span class="text-emerald-400 font-mono text-[10px]">API-LIVE</span></h1>
-                        <p class="text-[9px] text-neutral-400">متصل بـ Google Gemini API بشكل حقيقي ومباشر</p>
-                    </div>
-                </div>
-                <div class="flex items-center gap-2">
-                    <button onclick="toggleVoiceOutput()" id="voiceToggleBtn" class="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs rounded-lg transition flex items-center gap-1.5 border border-neutral-700">
-                        <span>🔊 الصوت الحقيقي: متوقف</span>
-                    </button>
-                </div>
-            </header>
+  while (maxIterations-- > 0) {
+    // 2. استدعاء النموذج
+    const response = await provider.chat(messages);
 
-            <main class="flex-1 max-w-3xl w-full mx-auto flex flex-col h-[calc(100vh-60px)] justify-between relative">
-                
-                <div id="chatContainer" class="flex-1 overflow-y-auto p-4 space-y-6 pb-28">
-                    <div class="flex items-start gap-3">
-                        <div class="w-8 h-8 rounded-full bg-emerald-600 flex-shrink-0 flex items-center justify-center text-white font-bold text-xs">AI</div>
-                        <div class="bg-[#212121] border border-neutral-800 p-4 rounded-2xl text-sm chat-bubble max-w-xl shadow-sm">
-                            أهلاً بك يا مشرف النظام! تم ربط المفتاح البرمجي بنجاح تام. أنا الآن أجيبك عبر نموذج الذكاء الاصطناعي الحقيقي. كيف يمكنني مساعدتك برمجياً اليوم؟
-                        </div>
-                    </div>
-                </div>
+    if (response.content) {
+      // رد نهائي
+      finalResponse = response.content;
+      messages.push({ role: 'assistant', content: response.content });
 
-                <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-[#171717] via-[#171717]/90 to-transparent p-4">
-                    <div class="max-w-3xl mx-auto bg-[#2f2f2f] border border-neutral-700/60 rounded-2xl p-3 shadow-2xl flex flex-col gap-2">
-                        
-                        <textarea id="userInput" rows="1" oninput="autoResize(this)" onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); sendChatMessage();}" placeholder="تحدث مع النظام أو اطلب منه تعديل الكود..." class="w-full bg-transparent text-sm text-white focus:outline-none resize-none max-h-32 placeholder-neutral-400"></textarea>
-                        
-                        <div class="flex justify-between items-center pt-2 border-t border-neutral-700/40">
-                            <div class="flex items-center gap-2">
-                                <label class="p-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl cursor-pointer transition flex items-center gap-1.5 text-xs border border-neutral-700">
-                                    <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
-                                    <span id="fileLabel">رفع ملف/صورة</span>
-                                    <input type="file" id="fileInput" onchange="handleFileSelect(event)" class="hidden">
-                                </label>
+      // تسجيل درس إذا كان الرد يتضمن معلومة برمجية مفيدة (تبسيط)
+      if (finalResponse.includes('درس') || finalResponse.includes('تعلم')) {
+        addLesson('درس جديد من المحادثة', finalResponse.substring(0, 100));
+      }
+      break;
+    }
 
-                                <button onclick="startVoiceRecognition()" id="micBtn" class="p-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl transition flex items-center gap-1.5 text-xs border border-neutral-700">
-                                    <span>🎙️ تحدث صوتياً</span>
-                                </button>
-                            </div>
+    // 3. وجود طلب استدعاء أداة
+    if (response.tool_calls && response.tool_calls.length > 0) {
+      const toolCall = response.tool_calls[0];
+      const toolName = toolCall.function.name;
+      let args = {};
+      try {
+        args = JSON.parse(toolCall.function.arguments);
+      } catch (e) {}
 
-                            <button onclick="sendChatMessage()" class="p-2.5 bg-white hover:bg-neutral-200 text-neutral-900 font-bold rounded-xl transition shadow-md flex items-center justify-center">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"/></svg>
-                            </button>
-                        </div>
-                    </div>
-                </div>
+      // تنفيذ الأداة فعلياً
+      const result = await executeTool(toolName, args);
 
-            </main>
+      // إضافة استدعاء الأداة ونتيجتها إلى سجل المحادثة
+      const toolResultMessage = {
+        role: 'tool',
+        tool_call_id: toolCall.id || toolName,
+        content: result.success ? result.output : `❌ خطأ: ${result.error}`
+      };
+      messages.push({ role: 'assistant', content: null, tool_calls: response.tool_calls });
+      messages.push(toolResultMessage);
 
-            <script>
-                let voiceOutputActive = false;
-                let attachedFile = null;
+      // إذا فشلت الأداة، نسجل الدرس
+      if (!result.success) {
+        addLesson(`فشل استدعاء ${toolName}`, result.error);
+      }
+    } else {
+      // حالة نادرة
+      finalResponse = 'عذراً، لم أفهم الرد. حاول مرة أخرى.';
+      break;
+    }
+  }
 
-                function toggleVoiceOutput() {
-                    voiceOutputActive = !voiceOutputActive;
-                    const btn = document.getElementById('voiceToggleBtn');
-                    btn.innerHTML = voiceOutputActive ? '<span>🔊 الصوت: مفعل</span>' : '<span>🔊 الصوت: متوقف</span>';
-                    btn.classList.toggle('bg-emerald-600', voiceOutputActive);
-                    btn.classList.toggle('text-white', voiceOutputActive);
-                }
+  if (!finalResponse) {
+    finalResponse = '⏳ انتهى وقت المعالجة. حاول مرة أخرى.';
+  }
 
-                function speakText(text) {
-                    if (!voiceOutputActive || !('speechSynthesis' in window)) return;
-                    window.speechSynthesis.cancel();
-                    const utterance = new SpeechSynthesisUtterance(text);
-                    utterance.lang = 'ar-SA';
-                    utterance.rate = 1.0;
-                    window.speechSynthesis.speak(utterance);
-                }
+  return { response: finalResponse, messages };
+}
 
-                function startVoiceRecognition() {
-                    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-                    if (!SpeechRecognition) {
-                        alert('متصفحك لا يدعم التعرف على الصوت.');
-                        return;
-                    }
-                    const recognition = new SpeechRecognition();
-                    recognition.lang = 'ar-SA';
-                    recognition.onstart = () => { document.getElementById('micBtn').classList.add('bg-emerald-600', 'text-white'); };
-                    recognition.onresult = (event) => {
-                        const speechToText = event.results[0][0].transcript;
-                        document.getElementById('userInput').value = speechToText;
-                        sendChatMessage();
-                    };
-                    recognition.onend = () => { document.getElementById('micBtn').classList.remove('bg-emerald-600', 'text-white'); };
-                    recognition.start();
-                }
+// ============================================================
+// 🌐 واجهة برمجة التطبيقات (API)
+// ============================================================
 
-                function handleFileSelect(event) {
-                    const file = event.target.files[0];
-                    if (file) {
-                        attachedFile = file;
-                        document.getElementById('fileLabel').textContent = file.name.substring(0, 10) + '...';
-                    }
-                }
-
-                function autoResize(textarea) {
-                    textarea.style.height = 'auto';
-                    textarea.style.height = textarea.scrollHeight + 'px';
-                }
-
-                async function sendChatMessage() {
-                    const input = document.getElementById('userInput');
-                    const text = input.value.trim();
-                    if (!text && !attachedFile) return;
-
-                    const container = document.getElementById('chatContainer');
-                    let fileHTML = attachedFile ? \`<div class="text-[10px] text-emerald-400 mt-1">📎 مرفق: \${attachedFile.name}</div>\` : '';
-                    
-                    container.innerHTML += \`
-                        <div class="flex items-start gap-3 justify-end">
-                            <div class="bg-[#2f2f2f] border border-neutral-700/60 p-4 rounded-2xl text-sm chat-bubble max-w-xl shadow-sm">
-                                \${text} \${fileHTML}
-                            </div>
-                            <div class="w-8 h-8 rounded-full bg-neutral-700 flex-shrink-0 flex items-center justify-center text-white font-bold text-xs">أنت</div>
-                        </div>
-                    \`;
-                    
-                    input.value = '';
-                    input.style.height = 'auto';
-                    container.scrollTop = container.scrollHeight;
-
-                    let fileData = null;
-                    if (attachedFile) {
-                        fileData = await toBase64(attachedFile);
-                    }
-                    const fileName = attachedFile ? attachedFile.name : null;
-                    attachedFile = null;
-                    document.getElementById('fileLabel').textContent = 'رفع ملف/صورة';
-
-                    try {
-                        const res = await fetch('/api/chat', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ prompt: text, file: fileData, fileName })
-                        });
-                        const data = await res.json();
-
-                        container.innerHTML += \`
-                            <div class="flex items-start gap-3">
-                                <div class="w-8 h-8 rounded-full bg-emerald-600 flex-shrink-0 flex items-center justify-center text-white font-bold text-xs">AI</div>
-                                <div class="bg-[#212121] border border-neutral-800 p-4 rounded-2xl text-sm chat-bubble max-w-xl shadow-sm whitespace-pre-line">
-                                    \${data.response}
-                                    \${data.fileAction ? \`<div class="mt-2 text-xs text-cyan-400 font-mono">\${data.fileAction}</div>\` : ''}
-                                </div>
-                            </div>
-                        \`;
-                        container.scrollTop = container.scrollHeight;
-                        speakText(data.response);
-                    } catch (err) {
-                        console.error(err);
-                    }
-                }
-
-                const toBase64 = file => new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.readAsDataURL(file);
-                    reader.onload = () => resolve(reader.result);
-                    reader.onerror = error => reject(error);
-                });
-            </script>
-        </body>
-        </html>
-    `);
-});
-
+// نقطة الدردشة الرئيسية
 app.post('/api/chat', async (req, res) => {
-    const { prompt, file, fileName } = req.body;
-    let fileAction = "";
+  const { prompt, history = [] } = req.body;
+  if (!prompt) return res.status(400).json({ error: 'الرسالة مطلوبة' });
 
-    if (file && fileName) {
-        const base64Data = file.split(';base64,').pop();
-        const filePath = path.join(UPLOADS_DIR, fileName);
-        fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
-        fileAction = `📁 تم استلام الملف المرفق في مسار: uploads/${fileName}`;
-    }
-
-    let aiResponse = "";
-
-    try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`;
-        const apiRes = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt || "مرحباً" }] }],
-                systemInstruction: { parts: [{ text: "أنت مساعد ذكاء اصطناعي متطور جداً تعمل داخل نظام OpenClaw. أجب على المستخدم بذكاء وواقعية واحترافية تامة باللغة العربية." }] }
-            })
-        });
-        const apiData = await apiRes.json();
-        aiResponse = apiData.candidates?.[0]?.content?.parts?.[0]?.text || "عذراً، لم يتم تلقي استجابة من نموذج الذكاء الاصطناعي.";
-
-        if (prompt && (prompt.includes('ملف') || prompt.includes('كود') || prompt.includes('انشاء') || prompt.includes('تطوير') || prompt.includes('برمجة') || prompt.includes('مهارة'))) {
-            const genName = `module_${Date.now()}.js`;
-            const genPath = path.join(WORKSPACE_DIR, genName);
-            fs.writeFileSync(genPath, `// Autonomous Generated Code\n// User: ${prompt}\nconsole.log("Module active.");`);
-            aiResponse += `\n\n✨ [التطور الذاتي]: تم إنشاء وتطوير الملف البرمجي الحقيقي في مسار السيرفر:\nworkspace/${genName}`;
-            fileAction = `🚀 تم حفظ الملف وتحديث السيرفر بنجاح.`;
-        }
-
-        res.json({ success: true, response: aiResponse, fileAction });
-    } catch (err) {
-        res.status(500).json({ success: false, response: `خطأ في الاتصال بنموذج الذكاء الاصطناعي: ${err.message}` });
-    }
+  try {
+    const result = await runAgent(prompt, history);
+    res.json({ success: true, response: result.response });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, response: `⚠️ خطأ في السيرفر: ${err.message}` });
+  }
 });
 
+// تبديل النموذج ديناميكياً
+app.post('/api/switch', (req, res) => {
+  const { provider } = req.body;
+  if (!['gemini', 'deepseek', 'ollama'].includes(provider)) {
+    return res.status(400).json({ error: 'موفر غير صالح' });
+  }
+  config.ACTIVE_PROVIDER = provider;
+  res.json({ success: true, message: `✅ تم التبديل إلى ${provider}` });
+});
+
+// ============================================================
+// 🖥️ واجهة المستخدم (HTML/CSS/JS) - متجاوبة مع الهاتف
+// ============================================================
+app.get('/', (req, res) => {
+  res.send(`
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5">
+  <title>OpenClaw Agent</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    body { background: #0f0f13; color: #e4e4ef; font-family: 'Cairo', sans-serif; }
+    .glass { background: rgba(30, 30, 40, 0.7); backdrop-filter: blur(4px); border: 1px solid #2a2a35; }
+    .step-log { background: #1a1a22; border-radius: 12px; padding: 6px 12px; font-size: 12px; color: #9ca3af; }
+    .step-log span { color: #34d399; }
+    #chatContainer { scroll-behavior: smooth; }
+    .typing-indicator span { display: inline-block; animation: blink 1.4s infinite; }
+    .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+    .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes blink { 0% { opacity: 0.2; } 50% { opacity: 1; } 100% { opacity: 0.2; } }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col max-w-2xl mx-auto p-3">
+
+  <header class="flex justify-between items-center py-3 border-b border-neutral-800">
+    <div class="flex items-center gap-2">
+      <div class="w-8 h-8 rounded-xl bg-emerald-600 flex items-center justify-center text-sm font-black">OC</div>
+      <h1 class="text-lg font-bold">OpenClaw <span class="text-emerald-400 text-sm">Agent</span></h1>
+    </div>
+    <div class="flex items-center gap-2 text-xs bg-neutral-800 px-3 py-1.5 rounded-full">
+      <span id="currentProvider">${config.ACTIVE_PROVIDER}</span>
+      <select id="providerSelect" onchange="switchProvider(this.value)" class="bg-transparent border border-neutral-600 rounded px-1 text-white outline-none">
+        <option value="gemini" ${config.ACTIVE_PROVIDER === 'gemini' ? 'selected' : ''}>Gemini</option>
+        <option value="deepseek" ${config.ACTIVE_PROVIDER === 'deepseek' ? 'selected' : ''}>DeepSeek</option>
+        <option value="ollama" ${config.ACTIVE_PROVIDER === 'ollama' ? 'selected' : ''}>Ollama</option>
+      </select>
+    </div>
+  </header>
+
+  <main class="flex-1 flex flex-col h-[calc(100vh-130px)] mt-3">
+    <div id="chatContainer" class="flex-1 overflow-y-auto space-y-4 p-2 pb-4">
+      <div class="flex gap-3 items-start">
+        <div class="w-8 h-8 rounded-full bg-emerald-600 flex shrink-0 items-center justify-center text-xs font-bold">AI</div>
+        <div class="glass p-3 rounded-2xl text-sm max-w-[85%] leading-relaxed">
+          👋 أهلاً! أنا وكيل OpenClaw الذكي.<br>
+          استخدم الأدوات لقراءة/كتابة الملفات، تشغيل الأوامر، وإدارة Git.<br>
+          <span class="text-neutral-400 text-[10px]">(النموذج النشط: ${config.ACTIVE_PROVIDER})</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- منطقة عرض الخطوات (تظهر أثناء التنفيذ) -->
+    <div id="stepLog" class="step-log mb-2 hidden">
+      ⚡ <span id="stepText">جاري التنفيذ...</span>
+    </div>
+
+    <div class="glass p-3 rounded-2xl flex gap-2 items-end">
+      <textarea id="userInput" rows="1" placeholder="اكتب طلبك..." 
+        class="flex-1 bg-transparent border-0 outline-none resize-none text-sm max-h-28 placeholder-neutral-500"
+        onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); sendMessage();}"></textarea>
+      <button onclick="sendMessage()" class="bg-emerald-600 hover:bg-emerald-700 p-2.5 rounded-xl transition text-white">
+        <svg class="w-5 h-5 rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"/></svg>
+      </button>
+    </div>
+  </main>
+
+  <script>
+    let chatHistory = [];
+    const container = document.getElementById('chatContainer');
+    const stepLog = document.getElementById('stepLog');
+    const stepText = document.getElementById('stepText');
+
+    function addMessage(role, content, isHtml = false) {
+      const div = document.createElement('div');
+      div.className = \`flex gap-3 items-start \${role === 'user' ? 'justify-end' : ''}\`;
+      const avatar = role === 'user' ? '🧑' : '🤖';
+      const bg = role === 'user' ? 'bg-neutral-700' : 'glass';
+      const align = role === 'user' ? 'order-2' : '';
+      div.innerHTML = \`
+        <div class="w-8 h-8 rounded-full \${bg} flex shrink-0 items-center justify-center text-sm font-bold order-1">\${avatar}</div>
+        <div class="\${bg} p-3 rounded-2xl text-sm max-w-[85%] leading-relaxed order-2 whitespace-pre-line">
+          \${isHtml ? content : content.replace(/\\n/g, '<br>')}
+        </div>
+      \`;
+      container.appendChild(div);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function showStep(text) {
+      stepLog.classList.remove('hidden');
+      stepText.textContent = text;
+    }
+
+    function hideStep() {
+      stepLog.classList.add('hidden');
+    }
+
+    async function sendMessage() {
+      const input = document.getElementById('userInput');
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = '';
+      input.style.height = 'auto';
+
+      addMessage('user', text);
+      chatHistory.push({ role: 'user', content: text });
+
+      // مؤقت انتظار
+      const tempDiv = document.createElement('div');
+      tempDiv.className = 'flex gap-3 items-start';
+      tempDiv.innerHTML = \`
+        <div class="w-8 h-8 rounded-full bg-emerald-600 flex shrink-0 items-center justify-center text-sm font-bold">AI</div>
+        <div class="glass p-3 rounded-2xl text-sm">
+          <span class="typing-indicator flex gap-1"><span>.</span><span>.</span><span>.</span></span>
+        </div>
+      \`;
+      container.appendChild(tempDiv);
+      container.scrollTop = container.scrollHeight;
+
+      try {
+        showStep('🧠 النموذج يفكر...');
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: text, history: chatHistory })
+        });
+        const data = await res.json();
+        hideStep();
+
+        // إزالة مؤقت الانتظار
+        tempDiv.remove();
+
+        if (data.success) {
+          chatHistory.push({ role: 'assistant', content: data.response });
+          addMessage('assistant', data.response);
+        } else {
+          addMessage('assistant', '❌ ' + data.response);
+        }
+      } catch (err) {
+        tempDiv.remove();
+        addMessage('assistant', '⚠️ فشل الاتصال بالسيرفر: ' + err.message);
+      }
+    }
+
+    async function switchProvider(provider) {
+      try {
+        showStep('🔄 جاري التبديل إلى ' + provider);
+        const res = await fetch('/api/switch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider })
+        });
+        const data = await res.json();
+        hideStep();
+        if (data.success) {
+          document.getElementById('currentProvider').textContent = provider;
+          addMessage('assistant', '✅ تم التبديل إلى النموذج: ' + provider);
+        } else {
+          addMessage('assistant', '❌ فشل التبديل: ' + data.error);
+        }
+      } catch (err) {
+        hideStep();
+        addMessage('assistant', '⚠️ خطأ في التبديل: ' + err.message);
+      }
+    }
+
+    // auto-resize
+    const ta = document.getElementById('userInput');
+    ta.addEventListener('input', function() {
+      this.style.height = 'auto';
+      this.style.height = this.scrollHeight + 'px';
+    });
+  </script>
+</body>
+</html>
+  `);
+});
+
+// ============================================================
+// 🚀 تشغيل السيرفر
+// ============================================================
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Live API Connected Core running on port ${PORT}`);
+  console.log(`🔥 OpenClaw Agent running on port ${PORT}`);
+  console.log(`🧠 النموذج النشط: ${config.ACTIVE_PROVIDER}`);
+  console.log(`📂 مساحة العمل: ${config.WORKSPACE_DIR}`);
 });
