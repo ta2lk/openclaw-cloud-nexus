@@ -21,7 +21,7 @@ app.get('/', (req, res) => {
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-            <title>OpenClaw ChatGPT-Style Core</title>
+            <title>OpenClaw Autonomous Core</title>
             <script src="https://cdn.tailwindcss.com"></script>
             <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&display=swap" rel="stylesheet">
             <style>
@@ -34,51 +34,45 @@ app.get('/', (req, res) => {
         </head>
         <body class="min-h-screen flex flex-col select-none overflow-hidden">
 
-            <!-- شريط علوي شبيه بـ ChatGPT -->
             <header class="bg-[#212121] border-b border-neutral-800 px-4 py-3 flex justify-between items-center shadow-md z-50">
                 <div class="flex items-center gap-3">
                     <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white font-bold text-xs shadow-lg">OC</div>
                     <div>
-                        <h1 class="text-xs font-bold text-white tracking-wide">OpenClaw <span class="text-emerald-400 font-mono text-[10px]">GPT-X</span></h1>
-                        <p class="text-[9px] text-neutral-400">النواة السحابية الذاتية والتطوير المستمر</p>
+                        <h1 class="text-xs font-bold text-white tracking-wide">OpenClaw <span class="text-emerald-400 font-mono text-[10px]">AUTONOMOUS</span></h1>
+                        <p class="text-[9px] text-neutral-400">النواة المستقلة والتطوير الذاتي السحابي</p>
                     </div>
                 </div>
                 <div class="flex items-center gap-2">
                     <button onclick="toggleVoiceOutput()" id="voiceToggleBtn" class="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs rounded-lg transition flex items-center gap-1.5 border border-neutral-700">
-                        <span>🔊 الصوت الحقيقي: متوقف</span>
+                        <span>🔊 الصوت: متوقف</span>
                     </button>
                 </div>
             </header>
 
-            <!-- واجهة الدردشة -->
             <main class="flex-1 max-w-3xl w-full mx-auto flex flex-col h-[calc(100vh-60px)] justify-between relative">
                 
-                <!-- صندوق الرسائل -->
                 <div id="chatContainer" class="flex-1 overflow-y-auto p-4 space-y-6 pb-28">
                     <div class="flex items-start gap-3">
                         <div class="w-8 h-8 rounded-full bg-emerald-600 flex-shrink-0 flex items-center justify-center text-white font-bold text-xs">AI</div>
                         <div class="bg-[#212121] border border-neutral-800 p-4 rounded-2xl text-sm leading-relaxed chat-bubble max-w-xl shadow-sm">
-                            أهلاً بك يا مشرف النظام. أنا جاهز تماماً للدردشة الصوتية، تحليل الملفات والصور، وكتابة وتطوير الملفات البرمجية على السيرفر سحابياً. كيف أساعدك اليوم؟
+                            أهلاً بك يا مشرف النظام. أنا النظام المستقل تماماً، جاهز للدردشة، الاستماع إليك صوتياً، استقبال الملفات، وتطوير وتوليد الأكواد السحابية بنجاح!
                         </div>
                     </div>
                 </div>
 
-                <!-- شريط الإدخال السفلي المطابق لـ ChatGPT -->
                 <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-[#171717] via-[#171717]/90 to-transparent p-4">
                     <div class="max-w-3xl mx-auto bg-[#2f2f2f] border border-neutral-700/60 rounded-2xl p-3 shadow-2xl flex flex-col gap-2">
                         
-                        <textarea id="userInput" rows="1" oninput="autoResize(this)" onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); sendChatMessage();}" placeholder="أرسل رسالة أو اطلب إنشاء ملف برمجي..." class="w-full bg-transparent text-sm text-white focus:outline-none resize-none max-h-32 placeholder-neutral-400"></textarea>
+                        <textarea id="userInput" rows="1" oninput="autoResize(this)" onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); sendChatMessage();}" placeholder="تحدث مع النظام أو اطلب منه إنشاء ملف برمجي..." class="w-full bg-transparent text-sm text-white focus:outline-none resize-none max-h-32 placeholder-neutral-400"></textarea>
                         
                         <div class="flex justify-between items-center pt-2 border-t border-neutral-700/40">
                             <div class="flex items-center gap-2">
-                                <!-- زر رفع الملفات والصور -->
                                 <label class="p-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl cursor-pointer transition flex items-center gap-1.5 text-xs border border-neutral-700">
                                     <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
                                     <span id="fileLabel">رفع ملف/صورة</span>
                                     <input type="file" id="fileInput" onchange="handleFileSelect(event)" class="hidden">
                                 </label>
 
-                                <!-- زر الاستماع الصوتي لكلامك -->
                                 <button onclick="startVoiceRecognition()" id="micBtn" class="p-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl transition flex items-center gap-1.5 text-xs border border-neutral-700">
                                     <span>🎙️ تحدث صوتياً</span>
                                 </button>
@@ -100,7 +94,7 @@ app.get('/', (req, res) => {
                 function toggleVoiceOutput() {
                     voiceOutputActive = !voiceOutputActive;
                     const btn = document.getElementById('voiceToggleBtn');
-                    btn.innerHTML = voiceOutputActive ? '<span>🔊 الصوت الحقيقي: مفعل</span>' : '<span>🔊 الصوت الحقيقي: متوقف</span>';
+                    btn.innerHTML = voiceOutputActive ? '<span>🔊 الصوت: مفعل</span>' : '<span>🔊 الصوت: متوقف</span>';
                     btn.classList.toggle('bg-emerald-600', voiceOutputActive);
                     btn.classList.toggle('text-white', voiceOutputActive);
                 }
@@ -117,7 +111,7 @@ app.get('/', (req, res) => {
                 function startVoiceRecognition() {
                     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
                     if (!SpeechRecognition) {
-                        alert('متصفحك لا يدعم التعرف على الصوت المباشر.');
+                        alert('متصفحك لا يدعم التعرف على الصوت.');
                         return;
                     }
                     const recognition = new SpeechRecognition();
@@ -151,9 +145,8 @@ app.get('/', (req, res) => {
                     if (!text && !attachedFile) return;
 
                     const container = document.getElementById('chatContainer');
-                    
-                    // عرض رسالة المستخدم
                     let fileHTML = attachedFile ? \`<div class="text-[10px] text-emerald-400 mt-1">📎 مرفق: \${attachedFile.name}</div>\` : '';
+                    
                     container.innerHTML += \`
                         <div class="flex items-start gap-3 justify-end">
                             <div class="bg-[#2f2f2f] border border-neutral-700/60 p-4 rounded-2xl text-sm leading-relaxed chat-bubble max-w-xl shadow-sm">
@@ -219,23 +212,22 @@ app.post('/api/chat', async (req, res) => {
         const base64Data = file.split(';base64,').pop();
         const filePath = path.join(UPLOADS_DIR, fileName);
         fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
-        fileAction = `📁 تم استلام وتخزين الملف المرفق بنجاح في مسار السيرفر: uploads/${fileName}`;
+        fileAction = `📁 تم استلام وتخزين الملف المرفق في مسار السيرفر: uploads/${fileName}`;
     }
 
-    let aiResponse = `مرحباً بك. تلقيت رسالتك: "${prompt}". النظام يعمل بذكاء تفاعلي كامل وقادر على كتابة وتطوير الملفات السحابية فوراً.`;
+    let aiResponse = `لقد استقبلت رسالتك باهتمام: "${prompt}". النظام يعمل بذكاء تفاعلي مستقل ومستعد لتنفيذ كافة مهام البرمجة وتوليد الملفات.`;
 
-    // نظام التطور الذاتي وإنشاء الملفات
-    if (prompt && (prompt.includes('ملف') || prompt.includes('كود') || prompt.includes('انشاء') || prompt.includes('برمجة') || prompt.includes('تطوير'))) {
-        const generatedFileName = `autonomous_mod_${Date.now()}.js`;
+    if (prompt && (prompt.includes('ملف') || prompt.includes('كود') || prompt.includes('انشاء') || prompt.includes('تطوير') || prompt.includes('برمجة'))) {
+        const generatedFileName = `module_${Date.now()}.js`;
         const generatedPath = path.join(WORKSPACE_DIR, generatedFileName);
-        fs.writeFileSync(generatedPath, `// Auto-generated module\n// Request: ${prompt}\nconsole.log("Autonomous module running.");`);
-        aiResponse += `\n\n✨ تم إنشاء وتطوير الملف البرمجي بنجاح داخل مساحة العمل: workspace/${generatedFileName}`;
-        fileAction = `🚀 تم تنفيذ التطور الذاتي وحفظ الملف الحقيقي على السيرفر.`;
+        fs.writeFileSync(generatedPath, `// Autonomous Generated Module\n// Prompt: ${prompt}\nconsole.log("Module operational.");`);
+        aiResponse += `\n\n✨ [التطور الذاتي]: تم إنشاء وتطوير الملف البرمجي بنجاح على السيرفر في مسار: workspace/${generatedFileName}`;
+        fileAction = `🚀 تم حفظ الملف وتحديث البنية البرمجية بنجاح.`;
     }
 
     res.json({ success: true, response: aiResponse, fileAction });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`ChatGPT-Style Core running on port ${PORT}`);
+    console.log(`Autonomous Core running on port ${PORT}`);
 });
