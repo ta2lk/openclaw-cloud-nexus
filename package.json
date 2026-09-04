@@ -1,11 +1,10 @@
 {
   "name": "openclaw-cloud-nexus",
   "version": "4.0.0",
-  "description": "OpenClaw Autonomous Agent with Gemini, DeepSeek, Ollama",
+  "description": "OpenClaw Autonomous Agent",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js"
+    "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.19.2",
