@@ -1,13 +1,16 @@
 {
   "name": "openclaw-cloud-nexus",
-  "version": "3.0.0",
-  "description": "OpenClaw Real Cloud Autonomous Evolution Engine",
+  "version": "4.0.0",
+  "description": "OpenClaw Autonomous Agent with Gemini, DeepSeek, Ollama",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "nodemon server.js"
   },
   "dependencies": {
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "axios": "^1.7.5",
+    "dotenv": "^16.4.5"
   },
   "engines": {
     "node": "18.x"
