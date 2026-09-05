@@ -1,17 +1,18 @@
 {
   "name": "openclaw-cloud-nexus",
-  "version": "4.0.0",
-  "description": "OpenClaw Autonomous Agent",
+  "version": "5.0.0",
+  "description": "OpenClaw Autonomous Coding Agent",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "node --watch server.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
-    "axios": "^1.7.5",
-    "dotenv": "^16.4.5"
+    "axios": "^1.8.4",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2"
   },
   "engines": {
-    "node": "18.x"
+    "node": ">=20"
   }
 }
