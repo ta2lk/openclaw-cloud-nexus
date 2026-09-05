@@ -1,24 +1,58 @@
-version: '3.8'
 services:
+
   openclaw:
     build: .
+
+    container_name: openclaw-agent
+
+    restart: unless-stopped
+
     ports:
       - "3000:3000"
+
     environment:
-      - ACTIVE_PROVIDER=ollama
-      - OLLAMA_BASE_URL=http://ollama:11434
+
+      NODE_ENV: production
+
+      PORT: 3000
+
+      ACTIVE_PROVIDER: ollama
+
+      OLLAMA_BASE_URL: http://ollama:11434
+
+      OLLAMA_MODEL: llama3.2
+
+      WORKSPACE_DIR: /app/workspace
+
+      MAX_AGENT_ITERATIONS: 10
+
+      MAX_HISTORY_MESSAGES: 30
+
     volumes:
+
       - ./workspace:/app/workspace
+
     depends_on:
+
       - ollama
 
+
   ollama:
+
     image: ollama/ollama:latest
+
+    container_name: openclaw-ollama
+
+    restart: unless-stopped
+
     ports:
       - "11434:11434"
+
     volumes:
+
       - ollama_data:/root/.ollama
-    command: serve
+
 
 volumes:
+
   ollama_data:
